@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GuitarPath — Aprende Guitarra Gratis</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav id="navbar">
+        <div class="nav-container">
+            <a href="#/" class="logo" data-link>
+                <span class="logo-icon">♪</span> GuitarPath
+            </a>
+            <button class="menu-toggle" id="menuToggle" aria-label="Menú">
+                <span></span><span></span><span></span>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#/" data-link class="active">Inicio</a></li>
+                <li><a href="#/rutas" data-link>Rutas</a></li>
+                <li><a href="#/recursos" data-link>Recursos</a></li>
+                <li><a href="#/progreso" data-link>Mi Progreso</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main id="app"></main>
+
+    <footer>
+        <div class="footer-content">
+            <p>GuitarPath — Recursos gratuitos para aprender guitarra</p>
+            <p class="footer-note">Hecho con ♪ para guitarristas</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
