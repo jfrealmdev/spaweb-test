@@ -158,6 +158,27 @@ function getTotalStats() {
     return { totalLessons, completedLessons, startedPaths, totalPaths: PATHS.length };
 }
 
+// ===== Theme =====
+function initTheme() {
+    const saved = localStorage.getItem("guitarpath_theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const theme = saved || (prefersDark ? "dark" : "light");
+    document.documentElement.dataset.theme = theme;
+    updateThemeIcon(theme);
+}
+
+function toggleTheme() {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("guitarpath_theme", next);
+    updateThemeIcon(next);
+}
+
+function updateThemeIcon(theme) {
+    const btn = document.getElementById("themeToggle");
+    if (btn) btn.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
 // ===== Router =====
 function getRoute() {
     return window.location.hash.slice(1) || "/";
@@ -200,22 +221,23 @@ function renderHome() {
             <h2 class="section-title">Rutas populares</h2>
             <p class="section-subtitle">Elige una ruta y comienza a practicar hoy</p>
             <div class="cards-grid">
-                ${PATHS.slice(0, 3).map(p => renderPathCard(p)).join("")}
+                ${PATHS.slice(0, 3).map((p, i) => renderPathCard(p, i)).join("")}
             </div>
         </div>
     `;
 }
 
-function renderPathCard(path) {
+function renderPathCard(path, index) {
     const pct = getPathProgress(path.id);
+    const delay = typeof index === "number" ? index * 0.07 : 0;
     return `
-        <div class="card" onclick="navigate('/ruta/${path.id}')">
+        <div class="card fade-in-card" style="--delay:${delay}s" tabindex="0" role="button" onclick="navigate('/ruta/${path.id}')">
             <span class="card-icon">${path.icon}</span>
             <h3>${path.title}</h3>
             <p>${path.description}</p>
             <span class="card-tag tag-${path.tag}">${path.tagLabel}</span>
             ${pct > 0 ? `
-                <div class="path-progress-bar" style="margin-top:0.75rem">
+                <div class="path-progress-bar" style="margin-top:0.75rem" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso de ${path.title}">
                     <div class="path-progress-fill" style="width:${pct}%"></div>
                 </div>
                 <div class="path-progress-text">${pct}% completado</div>
@@ -230,7 +252,7 @@ function renderPaths() {
             <h2 class="section-title">Rutas de Aprendizaje</h2>
             <p class="section-subtitle">Caminos estructurados desde principiante hasta avanzado</p>
             <div class="cards-grid">
-                ${PATHS.map(p => renderPathCard(p)).join("")}
+                ${PATHS.map((p, i) => renderPathCard(p, i)).join("")}
             </div>
         </div>
     `;
@@ -250,16 +272,16 @@ function renderPathDetail(pathId) {
             <div class="path-header">
                 <h1>${path.icon} ${path.title}</h1>
                 <p>${path.description}</p>
-                <div class="path-progress-bar">
+                <div class="path-progress-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso de ${path.title}">
                     <div class="path-progress-fill" style="width:${pct}%"></div>
                 </div>
                 <div class="path-progress-text">${completed.length} de ${path.lessons.length} lecciones completadas (${pct}%)</div>
             </div>
             <div class="lessons-list">
-                ${path.lessons.map(l => {
+                ${path.lessons.map((l, i) => {
                     const done = completed.includes(l.id);
                     return `
-                        <div class="lesson-item ${done ? "completed" : ""}" data-path="${pathId}" data-lesson="${l.id}">
+                        <div class="lesson-item fade-in-card ${done ? "completed" : ""}" style="--delay:${i * 0.05}s" tabindex="0" role="button" data-path="${pathId}" data-lesson="${l.id}" aria-label="${done ? 'Completada' : 'Pendiente'}: ${l.title}">
                             <div class="lesson-check">${done ? "✓" : ""}</div>
                             <div class="lesson-info">
                                 <h4>${l.title}</h4>
@@ -287,15 +309,16 @@ function renderResources() {
                 <button class="filter-btn" data-filter="reading">Lectura</button>
             </div>
             <div class="resources-list" id="resourcesList">
-                ${RESOURCES.map(r => renderResourceCard(r)).join("")}
+                ${RESOURCES.map((r, i) => renderResourceCard(r, i)).join("")}
             </div>
         </div>
     `;
 }
 
-function renderResourceCard(r) {
+function renderResourceCard(r, index) {
+    const delay = typeof index === "number" ? index * 0.05 : 0;
     return `
-        <div class="resource-card" data-category="${r.category}">
+        <div class="resource-card fade-in-card" style="--delay:${delay}s" data-category="${r.category}">
             <span class="resource-icon">${r.icon}</span>
             <div class="resource-info">
                 <h3>${r.title}</h3>
@@ -310,42 +333,57 @@ function renderProgress() {
     const stats = getTotalStats();
     const progress = getProgress();
 
+    if (stats.completedLessons === 0) {
+        return `
+            <div class="fade-in">
+                <h2 class="section-title">Mi Progreso</h2>
+                <p class="section-subtitle">Resumen de tu avance en cada ruta</p>
+                <div class="empty-state">
+                    <span class="empty-icon">📊</span>
+                    <h3>Aún no hay progreso</h3>
+                    <p>Empieza una ruta de aprendizaje y tu progreso aparecerá aquí.</p>
+                    <a href="#/rutas" data-link class="btn btn-primary" style="margin-top:1rem">Explorar Rutas →</a>
+                </div>
+            </div>
+        `;
+    }
+
     return `
         <div class="fade-in">
             <h2 class="section-title">Mi Progreso</h2>
             <p class="section-subtitle">Resumen de tu avance en cada ruta</p>
 
             <div class="progress-overview">
-                <div class="progress-stat">
+                <div class="progress-stat fade-in-card" style="--delay:0s">
                     <div class="stat-number">${stats.completedLessons}</div>
                     <div class="stat-label">Lecciones completadas</div>
                 </div>
-                <div class="progress-stat">
+                <div class="progress-stat fade-in-card" style="--delay:0.07s">
                     <div class="stat-number">${stats.totalLessons - stats.completedLessons}</div>
                     <div class="stat-label">Por completar</div>
                 </div>
-                <div class="progress-stat">
+                <div class="progress-stat fade-in-card" style="--delay:0.14s">
                     <div class="stat-number">${stats.startedPaths}</div>
                     <div class="stat-label">Rutas iniciadas</div>
                 </div>
-                <div class="progress-stat">
+                <div class="progress-stat fade-in-card" style="--delay:0.21s">
                     <div class="stat-number">${stats.totalLessons > 0 ? Math.round((stats.completedLessons / stats.totalLessons) * 100) : 0}%</div>
                     <div class="stat-label">Progreso total</div>
                 </div>
             </div>
 
             <div class="progress-paths">
-                ${PATHS.map(p => {
+                ${PATHS.map((p, i) => {
                     const completed = (progress[p.id] || []).length;
                     const total = p.lessons.length;
                     const pct = Math.round((completed / total) * 100);
                     return `
-                        <div class="progress-path-card" onclick="navigate('/ruta/${p.id}')" style="cursor:pointer">
+                        <div class="progress-path-card fade-in-card" style="--delay:${i * 0.06}s" tabindex="0" role="button" onclick="navigate('/ruta/${p.id}')">
                             <div class="progress-path-header">
                                 <h3>${p.icon} ${p.title}</h3>
                                 <span class="progress-percent">${pct}%</span>
                             </div>
-                            <div class="mini-progress-bar">
+                            <div class="mini-progress-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso de ${p.title}">
                                 <div class="mini-progress-fill" style="width:${pct}%"></div>
                             </div>
                             <div class="path-progress-text" style="margin-top:0.5rem">${completed} de ${total} lecciones</div>
@@ -354,7 +392,7 @@ function renderProgress() {
                 }).join("")}
             </div>
 
-            ${stats.completedLessons > 0 ? `<button class="reset-btn" id="resetBtn">Reiniciar todo el progreso</button>` : ""}
+            <button class="reset-btn" id="resetBtn">Reiniciar todo el progreso</button>
         </div>
     `;
 }
@@ -374,25 +412,34 @@ function router() {
     const route = getRoute();
     const app = document.getElementById("app");
 
-    let html;
-    if (route === "/" || route === "") {
-        html = renderHome();
-    } else if (route === "/rutas") {
-        html = renderPaths();
-    } else if (route.startsWith("/ruta/")) {
-        const pathId = route.split("/ruta/")[1];
-        html = renderPathDetail(pathId);
-    } else if (route === "/recursos") {
-        html = renderResources();
-    } else if (route === "/progreso") {
-        html = renderProgress();
-    } else {
-        html = renderNotFound();
-    }
+    app.classList.add("loading");
 
-    app.innerHTML = html;
-    updateActiveNav();
-    bindEvents();
+    requestAnimationFrame(() => {
+        let html;
+        if (route === "/" || route === "") {
+            html = renderHome();
+        } else if (route === "/rutas") {
+            html = renderPaths();
+        } else if (route.startsWith("/ruta/")) {
+            const pathId = route.split("/ruta/")[1];
+            html = renderPathDetail(pathId);
+        } else if (route === "/recursos") {
+            html = renderResources();
+        } else if (route === "/progreso") {
+            html = renderProgress();
+        } else {
+            html = renderNotFound();
+        }
+
+        app.innerHTML = html;
+
+        requestAnimationFrame(() => {
+            app.classList.remove("loading");
+            updateActiveNav();
+            bindEvents();
+        });
+    });
+
     window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -409,14 +456,33 @@ function updateActiveNav() {
 }
 
 function bindEvents() {
-    // Lesson toggle
+    // Lesson toggle with completion animation
     document.querySelectorAll(".lesson-item[data-lesson]").forEach(el => {
         el.addEventListener("click", (e) => {
             if (e.target.closest(".lesson-link")) return;
             const pathId = el.dataset.path;
             const lessonId = el.dataset.lesson;
+            const wasCompleted = el.classList.contains("completed");
+
             toggleLesson(pathId, lessonId);
-            router();
+
+            if (!wasCompleted) {
+                el.classList.add("completed", "just-completed");
+                el.querySelector(".lesson-check").textContent = "✓";
+                setTimeout(() => router(), 450);
+            } else {
+                router();
+            }
+        });
+    });
+
+    // Keyboard support for interactive elements
+    document.querySelectorAll('[role="button"][tabindex="0"]').forEach(el => {
+        el.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                el.click();
+            }
         });
     });
 
@@ -451,6 +517,7 @@ function bindEvents() {
     document.querySelectorAll(".nav-links a").forEach(a => {
         a.addEventListener("click", () => {
             document.getElementById("navLinks").classList.remove("open");
+            document.getElementById("menuToggle").classList.remove("active");
         });
     });
 }
@@ -458,9 +525,14 @@ function bindEvents() {
 // ===== Init =====
 window.addEventListener("hashchange", router);
 window.addEventListener("DOMContentLoaded", () => {
-    // Mobile menu toggle
+    // Theme
+    initTheme();
+    document.getElementById("themeToggle").addEventListener("click", toggleTheme);
+
+    // Mobile menu toggle with hamburger animation
     document.getElementById("menuToggle").addEventListener("click", () => {
         document.getElementById("navLinks").classList.toggle("open");
+        document.getElementById("menuToggle").classList.toggle("active");
     });
 
     router();
