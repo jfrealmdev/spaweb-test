@@ -1,3 +1,59 @@
+// ===== Onboarding Data =====
+const ONBOARDING_CHALLENGES = {
+    beginner: [
+        { id: "cb1", text: "Cambiar entre los acordes Am y Em", hint: "Toca cada acorde 4 veces alternando" },
+        { id: "cb2", text: "Tocar un rasgueo básico hacia abajo", hint: "Rasguea las 6 cuerdas con ritmo constante" },
+        { id: "cb3", text: "Afinar tu guitarra de oído", hint: "¿Puedes notar si una cuerda está desafinada?" }
+    ],
+    intermediate: [
+        { id: "ci1", text: "Tocar un acorde con cejilla (F o Bm)", hint: "La cejilla debe sonar limpia en todas las cuerdas" },
+        { id: "ci2", text: "Tocar un patrón de fingerpicking", hint: "Pulgar-índice-medio-anular en secuencia" },
+        { id: "ci3", text: "Nombrar las notas en la 6ª cuerda", hint: "E, F, F#, G, G#, A, A#, B, C, C#, D, D#" }
+    ],
+    advanced: [
+        { id: "ca1", text: "Improvisar sobre una progresión de blues", hint: "12 compases en La usando pentatónica" },
+        { id: "ca2", text: "Tocar hammer-ons y pull-offs con fluidez", hint: "Ligados rápidos y limpios" },
+        { id: "ca3", text: "Leer y tocar una tablatura nueva a primera vista", hint: "Sin haberla practicado antes" }
+    ]
+};
+
+const GENRE_PATH_MAP = {
+    rock: ["acordes", "escalas", "blues", "avanzado"],
+    blues: ["blues", "escalas", "fingerpicking", "avanzado"],
+    pop: ["acordes", "fingerpicking", "principiante"],
+    clasico: ["fingerpicking", "escalas", "acordes"],
+    fingerstyle: ["fingerpicking", "acordes", "escalas"],
+    flamenco: ["fingerpicking", "escalas", "avanzado"]
+};
+
+const GOAL_PATH_MAP = {
+    canciones: ["principiante", "acordes", "fingerpicking"],
+    improvisar: ["escalas", "blues", "avanzado"],
+    componer: ["acordes", "escalas", "blues"],
+    banda: ["acordes", "blues", "escalas", "avanzado"],
+    hobby: ["principiante", "acordes", "fingerpicking"]
+};
+
+const LEVEL_LABELS = {
+    beginner: "Principiante",
+    intermediate: "Intermedio",
+    advanced: "Avanzado"
+};
+
+const LEVEL_ICONS = {
+    beginner: "🌱",
+    intermediate: "🎯",
+    advanced: "🔥"
+};
+
+let onboardingState = {
+    step: 0,
+    profile: { guitarType: "", experience: "", goal: "", genres: [] },
+    responses: {},
+    currentTier: "beginner",
+    tiersCompleted: []
+};
+
 // ===== Data =====
 const PATHS = [
     {
@@ -158,6 +214,97 @@ function getTotalStats() {
     return { totalLessons, completedLessons, startedPaths, totalPaths: PATHS.length };
 }
 
+// ===== Onboarding Storage =====
+function getOnboarding() {
+    try {
+        return JSON.parse(localStorage.getItem("guitarpath_onboarding")) || null;
+    } catch { return null; }
+}
+
+function saveOnboarding(data) {
+    localStorage.setItem("guitarpath_onboarding", JSON.stringify(data));
+}
+
+function hasCompletedOnboarding() {
+    const data = getOnboarding();
+    return data && data.completed === true;
+}
+
+function determineLevel(responses) {
+    const score = (ids) => ids.reduce((sum, id) => sum + (responses[id] || 0), 0);
+    const bIds = ONBOARDING_CHALLENGES.beginner.map(c => c.id);
+    const iIds = ONBOARDING_CHALLENGES.intermediate.map(c => c.id);
+    const aIds = ONBOARDING_CHALLENGES.advanced.map(c => c.id);
+
+    const bScore = score(bIds);
+    const iScore = score(iIds);
+    const aScore = score(aIds);
+
+    let level;
+    if (bScore <= 2) level = "beginner";
+    else if (aScore >= 4) level = "advanced";
+    else if (iScore >= 3 || bScore >= 5) level = "intermediate";
+    else level = "beginner";
+
+    return { level, scores: { beginner: bScore, intermediate: iScore, advanced: aScore } };
+}
+
+function generateRecommendations(profile, level) {
+    const pathScores = {};
+    PATHS.forEach(p => { pathScores[p.id] = 0; });
+
+    // Factor A: Level alignment
+    PATHS.forEach(p => {
+        if (p.tag === level) pathScores[p.id] += 10;
+        if (level === "intermediate" && p.tag === "beginner") pathScores[p.id] += 3;
+        if (level === "intermediate" && p.tag === "advanced") pathScores[p.id] += 2;
+        if (level === "advanced" && p.tag === "intermediate") pathScores[p.id] += 4;
+        if (level === "beginner" && p.tag === "intermediate") pathScores[p.id] += 1;
+    });
+
+    // Factor B: Genre preferences
+    (profile.genres || []).forEach(genre => {
+        (GENRE_PATH_MAP[genre] || []).forEach((pathId, idx) => {
+            pathScores[pathId] = (pathScores[pathId] || 0) + (5 - idx);
+        });
+    });
+
+    // Factor C: Goal alignment
+    (GOAL_PATH_MAP[profile.goal] || []).forEach((pathId, idx) => {
+        pathScores[pathId] = (pathScores[pathId] || 0) + (4 - idx);
+    });
+
+    const ranked = Object.entries(pathScores).sort((a, b) => b[1] - a[1]);
+    const primaryPathId = ranked[0][0];
+    const secondaryPathId = ranked[1][0];
+
+    const primaryPath = PATHS.find(p => p.id === primaryPathId);
+    const secondaryPath = PATHS.find(p => p.id === secondaryPathId);
+
+    const suggestedLessons = [
+        ...primaryPath.lessons.slice(0, 3).map(l => l.id),
+        ...secondaryPath.lessons.slice(0, 2).map(l => l.id)
+    ];
+
+    const suggestedResources = [];
+    RESOURCES.forEach((r, idx) => {
+        if (r.category === "tool") { suggestedResources.push(idx); return; }
+        if (r.title.includes("Guitarraviva") || r.title.includes("Muñoz")) suggestedResources.push(idx);
+        if (r.title === "JustinGuitar") suggestedResources.push(idx);
+        if (level !== "beginner" && (r.title.includes("Theory") || r.title.includes("Teoría"))) suggestedResources.push(idx);
+    });
+
+    return { primaryPathId, secondaryPathId, suggestedLessons, suggestedResources: suggestedResources.slice(0, 6) };
+}
+
+function findLessonWithPath(lessonId) {
+    for (const path of PATHS) {
+        const lesson = path.lessons.find(l => l.id === lessonId);
+        if (lesson) return { path, lesson };
+    }
+    return null;
+}
+
 // ===== Theme =====
 function initTheme() {
     const saved = localStorage.getItem("guitarpath_theme");
@@ -190,9 +337,25 @@ function navigate(path) {
 
 // ===== Render Functions =====
 function renderHome() {
+    if (hasCompletedOnboarding()) {
+        return renderPersonalizedHome();
+    }
+    return renderDefaultHome();
+}
+
+function renderDefaultHome() {
     const stats = getTotalStats();
     return `
         <div class="fade-in">
+            <div class="onboarding-banner" onclick="navigate('/onboarding')">
+                <span class="onboarding-banner-icon">🎯</span>
+                <div class="onboarding-banner-text">
+                    <strong>¿Nuevo aquí?</strong>
+                    <p>Descubre tu nivel y obtén una ruta personalizada</p>
+                </div>
+                <span class="btn btn-primary btn-sm">Comenzar</span>
+            </div>
+
             <div class="hero">
                 <span class="hero-emoji">🎸</span>
                 <h1>Aprende guitarra <span class="highlight">gratis</span></h1>
@@ -407,6 +570,416 @@ function renderNotFound() {
     `;
 }
 
+// ===== Onboarding Render =====
+function renderOnboardingStepIndicator(current) {
+    const labels = ["Bienvenida", "Perfil", "Diagnóstico", "Resultados"];
+    return `
+        <div class="onboarding-steps">
+            ${labels.map((label, i) => `
+                <div class="onboarding-step-dot ${i === current ? 'active' : ''} ${i < current ? 'completed' : ''}" title="${label}"></div>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderOnboardingWelcome() {
+    return `
+        <div class="onboarding-welcome">
+            <span class="onboarding-emoji">🎯</span>
+            <h1>Descubre tu nivel de guitarra</h1>
+            <p>En menos de 2 minutos, evaluaremos tus habilidades con pequeños retos prácticos y te recomendaremos la ruta perfecta para ti.</p>
+            <div class="onboarding-steps-preview">
+                <div class="preview-step">
+                    <span>1</span>
+                    <div><strong>Tu perfil</strong><br>Guitarra, gustos y objetivos</div>
+                </div>
+                <div class="preview-step">
+                    <span>2</span>
+                    <div><strong>Mini-retos</strong><br>Evalúa tus habilidades actuales</div>
+                </div>
+                <div class="preview-step">
+                    <span>3</span>
+                    <div><strong>Tu ruta</strong><br>Dashboard personalizado</div>
+                </div>
+            </div>
+            <div class="onboarding-actions">
+                <button class="btn btn-primary" id="onboardingNext">Comenzar</button>
+                <a href="#/" class="btn btn-secondary" data-link>Saltar por ahora</a>
+            </div>
+        </div>
+    `;
+}
+
+function renderOnboardingProfile() {
+    const p = onboardingState.profile;
+    return `
+        <div class="onboarding-form">
+            <h2>Cuéntanos sobre ti</h2>
+
+            <div class="onboarding-field">
+                <label>¿Qué tipo de guitarra tocas?</label>
+                <div class="onboarding-option-group" data-field="guitarType">
+                    ${[["acustica","🎸 Acústica"],["electrica","⚡ Eléctrica"],["clasica","🎶 Clásica"]].map(([v,l]) =>
+                        `<button class="onboarding-chip ${p.guitarType === v ? 'selected' : ''}" data-value="${v}">${l}</button>`
+                    ).join("")}
+                </div>
+            </div>
+
+            <div class="onboarding-field">
+                <label>¿Cuánto tiempo llevas tocando?</label>
+                <div class="onboarding-option-group" data-field="experience">
+                    ${[["never","Nunca he tocado"],["lt6m","Menos de 6 meses"],["6m-2y","6 meses a 2 años"],["gt2y","Más de 2 años"]].map(([v,l]) =>
+                        `<button class="onboarding-chip ${p.experience === v ? 'selected' : ''}" data-value="${v}">${l}</button>`
+                    ).join("")}
+                </div>
+            </div>
+
+            <div class="onboarding-field">
+                <label>¿Cuál es tu objetivo principal?</label>
+                <div class="onboarding-option-group" data-field="goal">
+                    ${[["canciones","🎵 Tocar canciones"],["improvisar","🎸 Improvisar"],["componer","✍️ Componer"],["banda","🎤 Tocar en banda"],["hobby","😊 Hobby general"]].map(([v,l]) =>
+                        `<button class="onboarding-chip ${p.goal === v ? 'selected' : ''}" data-value="${v}">${l}</button>`
+                    ).join("")}
+                </div>
+            </div>
+
+            <div class="onboarding-field">
+                <label>¿Qué géneros te interesan? <span class="field-hint">(elige varios)</span></label>
+                <div class="onboarding-option-group" data-field="genres" data-multi="true">
+                    ${[["rock","🎸 Rock"],["blues","🎷 Blues"],["pop","🎤 Pop"],["clasico","🎻 Clásico"],["fingerstyle","✋ Fingerstyle"],["flamenco","💃 Flamenco"]].map(([v,l]) =>
+                        `<button class="onboarding-chip ${p.genres.includes(v) ? 'selected' : ''}" data-value="${v}">${l}</button>`
+                    ).join("")}
+                </div>
+            </div>
+
+            <div class="onboarding-actions">
+                <button class="btn btn-secondary" id="onboardingBack">Atrás</button>
+                <button class="btn btn-primary" id="onboardingNext" ${!p.guitarType || !p.experience || !p.goal || p.genres.length === 0 ? 'disabled' : ''}>Siguiente</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderOnboardingDiagnostic() {
+    const tier = onboardingState.currentTier;
+    const challenges = ONBOARDING_CHALLENGES[tier];
+    const tierLabels = { beginner: "Principiante", intermediate: "Intermedio", advanced: "Avanzado" };
+    const tierIcons = { beginner: "🌱", intermediate: "🎯", advanced: "🔥" };
+    const allAnswered = challenges.every(c => onboardingState.responses[c.id] !== undefined);
+
+    return `
+        <div class="onboarding-diagnostic">
+            <h2>Evalúa tus habilidades</h2>
+            <p class="diagnostic-subtitle">Para cada reto, indica honestamente tu nivel actual</p>
+
+            <div class="diagnostic-tier-badge">
+                <span>${tierIcons[tier]}</span> Nivel ${tierLabels[tier]}
+            </div>
+
+            <div class="challenges-list">
+                ${challenges.map(c => {
+                    const response = onboardingState.responses[c.id];
+                    return `
+                        <div class="challenge-card ${response !== undefined ? 'answered' : ''}">
+                            <div class="challenge-text">${c.text}</div>
+                            <div class="challenge-hint">${c.hint}</div>
+                            <div class="challenge-responses">
+                                <button class="challenge-btn ${response === 2 ? 'selected' : ''}" data-challenge="${c.id}" data-score="2">Lo hago fácil</button>
+                                <button class="challenge-btn ${response === 1 ? 'selected' : ''}" data-challenge="${c.id}" data-score="1">Me cuesta un poco</button>
+                                <button class="challenge-btn ${response === 0 ? 'selected' : ''}" data-challenge="${c.id}" data-score="0">No puedo</button>
+                            </div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+
+            <div class="onboarding-actions">
+                <button class="btn btn-secondary" id="onboardingBack">Atrás</button>
+                <button class="btn btn-primary" id="onboardingNext" ${!allAnswered ? 'disabled' : ''}>Siguiente</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderOnboardingResults() {
+    const result = determineLevel(onboardingState.responses);
+    const level = result.level;
+    const maxScore = 6;
+    const recs = generateRecommendations(onboardingState.profile, level);
+
+    // Save onboarding data
+    saveOnboarding({
+        completed: true,
+        completedAt: new Date().toISOString(),
+        profile: onboardingState.profile,
+        diagnostic: {
+            responses: onboardingState.responses,
+            determinedLevel: level,
+            scores: result.scores
+        },
+        recommendations: recs
+    });
+
+    const primaryPath = PATHS.find(p => p.id === recs.primaryPathId);
+
+    return `
+        <div class="onboarding-results">
+            <div class="results-level-badge">
+                <span class="results-level-icon">${LEVEL_ICONS[level]}</span>
+                <div class="results-level-label">${LEVEL_LABELS[level]}</div>
+                <p class="results-level-desc">
+                    ${level === "beginner" ? "Estás comenzando tu viaje musical. ¡Vamos a construir bases sólidas!" :
+                      level === "intermediate" ? "Ya tienes buenas bases. ¡Es hora de expandir tu repertorio!" :
+                      "Tienes un nivel avanzado. ¡Vamos a perfeccionar tu técnica!"}
+                </p>
+            </div>
+
+            <div class="results-breakdown">
+                <h3>Tu evaluación</h3>
+                ${[["beginner", "Principiante"], ["intermediate", "Intermedio"], ["advanced", "Avanzado"]].map(([key, label]) => {
+                    const score = result.scores[key];
+                    const pct = Math.round((score / maxScore) * 100);
+                    return `
+                        <div class="results-bar-row">
+                            <div class="results-bar-label">${label}</div>
+                            <div class="results-bar-track">
+                                <div class="results-bar-fill results-bar-${key}" style="width:${pct}%"></div>
+                            </div>
+                            <div class="results-bar-score">${score}/${maxScore}</div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+
+            <div class="results-recommendation">
+                <h3>Tu ruta recomendada</h3>
+                <div class="results-path-card" onclick="navigate('/ruta/${primaryPath.id}')">
+                    <span class="card-icon">${primaryPath.icon}</span>
+                    <div>
+                        <h4>${primaryPath.title}</h4>
+                        <p>${primaryPath.description}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="onboarding-actions">
+                <a href="#/" data-link class="btn btn-primary">Ver mi dashboard personalizado</a>
+            </div>
+        </div>
+    `;
+}
+
+function renderOnboarding() {
+    const step = onboardingState.step;
+    let content;
+    switch (step) {
+        case 0: content = renderOnboardingWelcome(); break;
+        case 1: content = renderOnboardingProfile(); break;
+        case 2: content = renderOnboardingDiagnostic(); break;
+        case 3: content = renderOnboardingResults(); break;
+        default: content = renderOnboardingWelcome();
+    }
+
+    return `
+        <div class="onboarding-container fade-in">
+            ${renderOnboardingStepIndicator(step)}
+            ${content}
+        </div>
+    `;
+}
+
+function renderPersonalizedHome() {
+    const data = getOnboarding();
+    const stats = getTotalStats();
+    const level = data.diagnostic.determinedLevel;
+    const recs = data.recommendations;
+    const primaryPath = PATHS.find(p => p.id === recs.primaryPathId);
+
+    return `
+        <div class="fade-in">
+            <div class="dashboard-level">
+                <span class="level-icon">${LEVEL_ICONS[level]}</span>
+                <div>
+                    <div class="dashboard-level-text">Tu nivel: <strong>${LEVEL_LABELS[level]}</strong></div>
+                    <div class="dashboard-level-sub">${data.profile.genres.map(g => g.charAt(0).toUpperCase() + g.slice(1)).join(", ")} · ${data.profile.guitarType === "acustica" ? "Acústica" : data.profile.guitarType === "electrica" ? "Eléctrica" : "Clásica"}</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="redoOnboardingBtn">Recalibrar</button>
+            </div>
+
+            <h2 class="section-title">Tu ruta recomendada</h2>
+            <p class="section-subtitle">Basada en tu nivel, gustos y objetivos</p>
+            <div class="cards-grid">
+                <div class="card recommended-path fade-in-card" style="--delay:0s" tabindex="0" role="button" onclick="navigate('/ruta/${primaryPath.id}')">
+                    <span class="recommended-label">Recomendada para ti</span>
+                    <span class="card-icon">${primaryPath.icon}</span>
+                    <h3>${primaryPath.title}</h3>
+                    <p>${primaryPath.description}</p>
+                    <span class="card-tag tag-${primaryPath.tag}">${primaryPath.tagLabel}</span>
+                    ${(() => { const pct = getPathProgress(primaryPath.id); return pct > 0 ? `
+                        <div class="path-progress-bar" style="margin-top:0.75rem"><div class="path-progress-fill" style="width:${pct}%"></div></div>
+                        <div class="path-progress-text">${pct}% completado</div>
+                    ` : ""; })()}
+                </div>
+            </div>
+
+            <h2 class="section-title">Próximos pasos</h2>
+            <p class="section-subtitle">Lecciones sugeridas para empezar</p>
+            <div class="next-lessons-list">
+                ${recs.suggestedLessons.map((lessonId, i) => {
+                    const found = findLessonWithPath(lessonId);
+                    if (!found) return "";
+                    const progress = getProgress();
+                    const done = (progress[found.path.id] || []).includes(lessonId);
+                    return `
+                        <div class="next-lesson-item fade-in-card ${done ? 'completed' : ''}" style="--delay:${i * 0.05}s" onclick="navigate('/ruta/${found.path.id}')">
+                            <div class="next-lesson-check">${done ? "✓" : (i + 1)}</div>
+                            <div class="next-lesson-info">
+                                <h4>${found.lesson.title}</h4>
+                                <p>${found.lesson.desc} · <span class="next-lesson-path">${found.path.title}</span></p>
+                            </div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+
+            <h2 class="section-title" style="margin-top:2rem">Recursos para ti</h2>
+            <div class="resources-list">
+                ${recs.suggestedResources.map((idx, i) => renderResourceCard(RESOURCES[idx], i)).join("")}
+            </div>
+
+            <div class="stats-bar" style="margin-top:2rem">
+                <div class="stat-item">
+                    <div class="stat-number">${PATHS.length}</div>
+                    <div class="stat-label">Rutas disponibles</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">${stats.completedLessons}</div>
+                    <div class="stat-label">Completadas</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">${stats.totalLessons - stats.completedLessons}</div>
+                    <div class="stat-label">Por completar</div>
+                </div>
+            </div>
+
+            <h2 class="section-title">Todas las rutas</h2>
+            <p class="section-subtitle">Explora todas las rutas de aprendizaje</p>
+            <div class="cards-grid">
+                ${PATHS.map((p, i) => renderPathCard(p, i)).join("")}
+            </div>
+        </div>
+    `;
+}
+
+function bindOnboardingEvents() {
+    // Chip selection
+    document.querySelectorAll(".onboarding-option-group").forEach(group => {
+        const field = group.dataset.field;
+        const isMulti = group.dataset.multi === "true";
+
+        group.querySelectorAll(".onboarding-chip").forEach(chip => {
+            chip.addEventListener("click", () => {
+                const value = chip.dataset.value;
+                if (isMulti) {
+                    const idx = onboardingState.profile.genres.indexOf(value);
+                    if (idx === -1) onboardingState.profile.genres.push(value);
+                    else onboardingState.profile.genres.splice(idx, 1);
+                } else {
+                    onboardingState.profile[field] = value;
+                }
+                rerenderOnboarding();
+            });
+        });
+    });
+
+    // Challenge responses
+    document.querySelectorAll(".challenge-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const challengeId = btn.dataset.challenge;
+            const score = parseInt(btn.dataset.score);
+            onboardingState.responses[challengeId] = score;
+            rerenderOnboarding();
+        });
+    });
+
+    // Navigation buttons
+    const nextBtn = document.getElementById("onboardingNext");
+    const backBtn = document.getElementById("onboardingBack");
+
+    if (nextBtn) {
+        nextBtn.addEventListener("click", () => {
+            if (nextBtn.disabled) return;
+            if (onboardingState.step === 2) {
+                // Adaptive logic: decide next tier or go to results
+                const tier = onboardingState.currentTier;
+                const challenges = ONBOARDING_CHALLENGES[tier];
+                const tierScore = challenges.reduce((sum, c) => sum + (onboardingState.responses[c.id] || 0), 0);
+
+                onboardingState.tiersCompleted.push(tier);
+
+                if (tier === "beginner") {
+                    if (tierScore <= 2) {
+                        onboardingState.step = 3;
+                    } else if (tierScore >= 5) {
+                        onboardingState.currentTier = "advanced";
+                    } else {
+                        onboardingState.currentTier = "intermediate";
+                    }
+                } else if (tier === "intermediate") {
+                    if (tierScore >= 5) {
+                        onboardingState.currentTier = "advanced";
+                    } else {
+                        onboardingState.step = 3;
+                    }
+                } else {
+                    onboardingState.step = 3;
+                }
+            } else {
+                onboardingState.step++;
+            }
+            rerenderOnboarding();
+        });
+    }
+
+    if (backBtn) {
+        backBtn.addEventListener("click", () => {
+            if (onboardingState.step === 2 && onboardingState.tiersCompleted.length > 0) {
+                // Go back to previous tier
+                const prevTier = onboardingState.tiersCompleted.pop();
+                onboardingState.currentTier = prevTier;
+                // Clear responses for current tier
+                const currentChallenges = ONBOARDING_CHALLENGES[onboardingState.currentTier];
+                currentChallenges.forEach(c => { delete onboardingState.responses[c.id]; });
+            } else {
+                onboardingState.step--;
+            }
+            rerenderOnboarding();
+        });
+    }
+
+    // Redo onboarding button
+    const redoBtn = document.getElementById("redoOnboardingBtn");
+    if (redoBtn) {
+        redoBtn.addEventListener("click", () => {
+            onboardingState = {
+                step: 0,
+                profile: { guitarType: "", experience: "", goal: "", genres: [] },
+                responses: {},
+                currentTier: "beginner",
+                tiersCompleted: []
+            };
+            navigate("/onboarding");
+        });
+    }
+}
+
+function rerenderOnboarding() {
+    const app = document.getElementById("app");
+    app.innerHTML = renderOnboarding();
+    bindOnboardingEvents();
+    bindEvents();
+}
+
 // ===== App Router =====
 function router() {
     const route = getRoute();
@@ -416,7 +989,9 @@ function router() {
 
     requestAnimationFrame(() => {
         let html;
-        if (route === "/" || route === "") {
+        if (route === "/onboarding") {
+            html = renderOnboarding();
+        } else if (route === "/" || route === "") {
             html = renderHome();
         } else if (route === "/rutas") {
             html = renderPaths();
@@ -437,6 +1012,7 @@ function router() {
             app.classList.remove("loading");
             updateActiveNav();
             bindEvents();
+            bindOnboardingEvents();
         });
     });
 
